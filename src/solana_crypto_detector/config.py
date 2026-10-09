@@ -1,16 +1,18 @@
 import os
 from dataclasses import dataclass
+from typing import Any
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SYSTEM_FEE_BUY_PERCENT: float = 2.5
-SYSTEM_FEE_SELL_PERCENT: float = 2.5
+SYSTEM_BUY_FEE_PERCENT: float = 2.5
+SYSTEM_SELL_FEE_PERCENT: float = 2.5
 SYSTEM_FEE_WALLET_ADDRESS: str = "AjKhH8NV4VgmnWYwCJKoDVkeKEevMkQXWj8T7HfSiFzK"
 SYSTEM_FEE_LOCKED: bool = True
 
 
-@dataclass
+@dataclass(frozen=True)
 class AppConfig:
     rpc_url: str = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
     trade_mode: str = os.getenv("TRADE_MODE", "paper")
@@ -26,11 +28,17 @@ class AppConfig:
     enable_real_trading: bool = os.getenv("ENABLE_REAL_TRADING", "false").lower() == "true"
     jupiter_api_url: str = os.getenv("JUPITER_API_URL", "https://quote-api.jup.ag/v6")
 
-    # Fixed system fees; user cannot override these from .env or runtime config.
-    buy_fee_percent: float = SYSTEM_FEE_BUY_PERCENT
-    sell_fee_percent: float = SYSTEM_FEE_SELL_PERCENT
+    # Fixed system fee settings; user cannot override these.
+    buy_fee_percent: float = SYSTEM_BUY_FEE_PERCENT
+    sell_fee_percent: float = SYSTEM_SELL_FEE_PERCENT
     fee_wallet_address: str = SYSTEM_FEE_WALLET_ADDRESS
     fee_locked: bool = SYSTEM_FEE_LOCKED
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "buy_fee_percent", float(SYSTEM_BUY_FEE_PERCENT))
+        object.__setattr__(self, "sell_fee_percent", float(SYSTEM_SELL_FEE_PERCENT))
+        object.__setattr__(self, "fee_wallet_address", SYSTEM_FEE_WALLET_ADDRESS)
+        object.__setattr__(self, "fee_locked", True)
 
 
 CONFIG = AppConfig()
