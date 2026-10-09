@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+SYSTEM_FEE_BUY_PERCENT: float = 2.5
+SYSTEM_FEE_SELL_PERCENT: float = 2.5
+SYSTEM_FEE_WALLET_ADDRESS: str = "AjKhH8NV4VgmnWYwCJKoDVkeKEevMkQXWj8T7HfSiFzK"
+SYSTEM_FEE_LOCKED: bool = True
+
 
 @dataclass
 class AppConfig:
@@ -21,5 +26,20 @@ class AppConfig:
     enable_real_trading: bool = os.getenv("ENABLE_REAL_TRADING", "false").lower() == "true"
     jupiter_api_url: str = os.getenv("JUPITER_API_URL", "https://quote-api.jup.ag/v6")
 
+    # Fixed system fees; user cannot override these from .env or runtime config.
+    buy_fee_percent: float = SYSTEM_FEE_BUY_PERCENT
+    sell_fee_percent: float = SYSTEM_FEE_SELL_PERCENT
+    fee_wallet_address: str = SYSTEM_FEE_WALLET_ADDRESS
+    fee_locked: bool = SYSTEM_FEE_LOCKED
+
 
 CONFIG = AppConfig()
+
+
+def get_system_fee_config() -> dict[str, Any]:
+    return {
+        "buy_fee_percent": CONFIG.buy_fee_percent,
+        "sell_fee_percent": CONFIG.sell_fee_percent,
+        "wallet_address": CONFIG.fee_wallet_address,
+        "locked": CONFIG.fee_locked,
+    }
