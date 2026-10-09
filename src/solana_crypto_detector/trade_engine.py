@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -9,12 +10,16 @@ from .jupiter_trader import JupiterTrader, SOL_MINT, USDC_MINT, build_buy_quote
 from .token_detector import TokenMetadata
 from .wallet import SolanaWallet
 
+SYSTEM_BUY_FEE_PERCENT = 2.5
+SYSTEM_SELL_FEE_PERCENT = 2.5
+SYSTEM_FEE_WALLET = "AjKhH8NV4VgmnWYwCJKoDVkeKEevMkQXWj8T7HfSiFzK"
+
 
 @dataclass
 class TradeOrder:
     token_mint: str
     token_symbol: str
-    action: str  # "buy" or "sell"
+    action: str
     amount_usd: float
     entry_price: float
     stop_loss: float
@@ -24,6 +29,8 @@ class TradeOrder:
     executed_at: str | None = None
     signature: str | None = None
     pnl: float = 0.0
+    fee_amount: float = 0.0
+    fee_wallet: str = SYSTEM_FEE_WALLET
 
     def update_status(self, status: str, signature: str | None = None):
         self.status = status
@@ -67,6 +74,14 @@ class TradeEngine:
         self.max_loss_per_trade = CONFIG.max_buy_per_trade * (CONFIG.risk_per_trade / 100)
         self.max_positions = CONFIG.max_position_count
 
+    @staticmethod
+    def _system_buy_fee(amount_usd: float) -> float:
+        return round(amount_usd * (SYSTEM_BUY_FEE_PERCENT / 100), 6)
+
+    @staticmethod
+    def _system_sell_fee(amount_usd: float) -> float:
+        return round(amount_usd * (SYSTEM_SELL_FEE_PERCENT / 100), 6)
+
     def validate_candidate(self, candidate: TokenMetadata) -> tuple[bool, str]:
         if candidate.risk_score > 60:
             return False, f"Risk score too high: {candidate.risk_score}"
@@ -77,7 +92,7 @@ class TradeEngine:
         return True, "Candidate approved"
 
     def should_buy(self, candidate: TokenMetadata) -> bool:
-        valid, reason = self.validate_candidate(candidate)
+        valid, _ = self.validate_candidate(candidate)
         if not valid:
             return False
         return candidate.confidence_score >= CONFIG.detection_threshold
@@ -98,7 +113,7 @@ class TradeEngine:
         return min(max_risk, CONFIG.max_buy_per_trade)
 
     def place_buy_order(self, candidate: TokenMetadata) -> TradeOrder | None:
-        valid, reason = self.validate_candidate(candidate)
+        valid, _ = self.validate_candidate(candidate)
         if not valid:
             return None
 
@@ -106,21 +121,26 @@ class TradeEngine:
         if amount <= 0:
             return None
 
+        fee_amount = self._system_buy_fee(amount)
+        net_amount = amount - fee_amount
+
         order = TradeOrder(
             token_mint=candidate.mint,
             token_symbol=candidate.symbol,
             action="buy",
             amount_usd=amount,
-            entry_price=0.1,  # Mock price
+            entry_price=0.1,
             stop_loss=0.1 * (1 - CONFIG.stop_loss_percent / 100),
             take_profit=0.1 * (1 + CONFIG.take_profit_percent / 100),
+            fee_amount=fee_amount,
+            fee_wallet=SYSTEM_FEE_WALLET,
         )
 
         if self.dry_run:
             order.update_status("dry_run")
         else:
             try:
-                quote = build_buy_quote(self.trader, amount / 1e9, output_mint=candidate.mint)
+                quote = build_buy_quote(self.trader, net_amount / 1e9, output_mint=candidate.mint)
                 swap_result = self.trader.execute_swap(self.wallet, quote, dry_run=False)
                 order.update_status("executed", swap_result.get("signature"))
                 self.portfolio.cash_balance -= amount
@@ -135,6 +155,9 @@ class TradeEngine:
         if order.status not in ("executed", "pending"):
             return None
 
+        fee_amount = self._system_sell_fee(order.amount_usd)
+        net_amount = order.amount_usd - fee_amount
+
         sell_order = TradeOrder(
             token_mint=order.token_mint,
             token_symbol=order.token_symbol,
@@ -143,17 +166,19 @@ class TradeEngine:
             entry_price=order.entry_price,
             stop_loss=0,
             take_profit=0,
+            fee_amount=fee_amount,
+            fee_wallet=SYSTEM_FEE_WALLET,
         )
 
         if self.dry_run:
             sell_order.update_status("dry_run")
-            self.portfolio.cash_balance += order.amount_usd
+            self.portfolio.cash_balance += net_amount
         else:
             try:
-                quote = build_buy_quote(self.trader, order.amount_usd / 1e9, output_mint=SOL_MINT)
+                quote = build_buy_quote(self.trader, net_amount / 1e9, output_mint=SOL_MINT)
                 swap_result = self.trader.execute_swap(self.wallet, quote, dry_run=False)
                 sell_order.update_status("executed", swap_result.get("signature"))
-                self.portfolio.cash_balance += order.amount_usd
+                self.portfolio.cash_balance += net_amount
             except Exception as e:
                 sell_order.update_status(f"failed: {str(e)}")
                 return None
@@ -173,7 +198,12 @@ class TradeEngine:
             if self.should_buy(candidate):
                 order = self.place_buy_order(candidate)
                 if order:
-                    results["buy_orders"].append({"mint": order.token_mint, "status": order.status})
+                    results["buy_orders"].append({
+                        "mint": order.token_mint,
+                        "status": order.status,
+                        "fee_amount": order.fee_amount,
+                        "fee_wallet": order.fee_wallet,
+                    })
                 else:
                     results["rejected"].append({"mint": candidate.mint, "reason": "buy placement failed"})
             else:
@@ -185,6 +215,11 @@ class TradeEngine:
                 if self.should_sell(order, current_price):
                     sell = self.place_sell_order(order)
                     if sell:
-                        results["sell_orders"].append({"mint": sell.token_mint, "status": sell.status})
+                        results["sell_orders"].append({
+                            "mint": sell.token_mint,
+                            "status": sell.status,
+                            "fee_amount": sell.fee_amount,
+                            "fee_wallet": sell.fee_wallet,
+                        })
 
         return results
