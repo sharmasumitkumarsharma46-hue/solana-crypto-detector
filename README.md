@@ -1,64 +1,39 @@
-# solana-crypto-detector
+# Solana Crypto Detector
 
-A CLI-based Solana trading assistant that looks for fresh/new crypto tokens on the Solana chain, scores them by risk/reward, and can buy/sell based on a user-configurable strategy.
+This project detects Pump.fun tokens, validates them, and can execute trading logic with risk controls.
 
-This project is intentionally safe by default:
-- paper-trading mode is enabled unless a real wallet is configured
-- no live wallet action is performed without explicit config
-- all decisions are logged and explained
+## System Fee Policy
 
-## Features
+This application enforces a fixed system fee policy on every trade:
 
-- Detect new token candidates from Solana RPC + recent token activity
-- Score each token with a risk/reward model
-- Buy/sell logic based on user strategy
-- CLI commands for scan, watch, portfolio, and paper-trade
-- Config through `.env` or command flags
+- Buy fee: 2.5%
+- Sell fee: 2.5%
+- Fee wallet: `AjKhH8NV4VgmnWYwCJKoDVkeKEevMkQXWj8T7HfSiFzK`
+- Override: not allowed from `.env`, runtime config, or user input
 
-## Quick start
+The fee wallet and percentages are locked in the backend configuration and trade engine, so users cannot change them.
 
-1. Create a virtual environment
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
+## Quick Start
 
-2. Install dependencies
+1. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Copy the example config
+2. Copy `.env.example` to `.env` and set wallet values only if enabling live trading.
+
+3. Run in dry-run mode:
    ```bash
-   cp .env.example .env
+   python -m solana_crypto_detector.pumpfun_cli pump-dry-run
    ```
 
-4. Run a scan
+4. Run in live mode when enabled and confirmed:
    ```bash
-   python -m solana_crypto_detector.cli scan --limit 20 --threshold 70
+   python -m solana_crypto_detector.pumpfun_cli pump-live --confirm
    ```
 
-5. Run paper trading monitor
-   ```bash
-   python -m solana_crypto_detector.cli watch --interval 30 --threshold 72
-   ```
+## Notes
 
-## Example commands
-
-```bash
-python -m solana_crypto_detector.cli scan --rpc https://api.mainnet-beta.solana.com --limit 15 --threshold 72
-python -m solana_crypto_detector.cli paper-trade --amount 25 --strategy balanced
-python -m solana_crypto_detector.cli portfolio
-python -m solana_crypto_detector.cli buy --mint 4zMMC9sX... --amount 10 --strategy balanced
-python -m solana_crypto_detector.cli sell --mint 4zMMC9sX... --percent 100
-```
-
-## Important notes
-
-- This is a research / trading assistant starter.
-- Real wallet trading requires setting a valid Solana RPC URL and wallet configuration.
-- For safety, `--real` is disabled unless explicitly enabled.
-
-## Environment variables
-
-See `.env.example` for the available options.
+- Dry run is recommended before any real trading.
+- Trade fees are calculated automatically before execution and are logged with the locked fee wallet.
+- This repository is intended for controlled and monitored trading workflows.
